@@ -1,0 +1,120 @@
+library(tidyverse)
+library(ForecastHelpers)
+
+theme_set(theme_minimal())
+current_month <- '2021-03-01'
+cutoff <- as.Date('2020-08-01')
+
+con <- DBI::dbConnect(odbc::odbc(),
+  Driver = "SQL Server",
+  Server = "192.168.66.59",
+  Database = "Data Warehouse",
+  Port = 1433
+)
+
+item_list <- c("601090",	"601132",	"900114",	"900127",	"601225-B",	"601205-C",	"601087-C",	"601088-C",	"601090-C",	"601090 SO-C",	"601130-C",	"601132-C",	"601148",	"601240-B",	"601243-C",	"601244",	"601256-C",	"601271-C",	"900127-C",	"900130-C",	"900196",	"900179",	"900177",	"601088",	"601234-C",	"601087",	"601200",	"601202",	"601203",	"601130",	"900130",	"601142-C",	"601144-C",	"601229",	"601141",	"601142",	"601144",	"601205",	"601158",	"601159",	"601160",	"601242",	"601243",	"601292",	"601321-C",	"601278-C",	"601272-C",	"601242-C",	"601258-C",	"601264-C",	"601305-C",	"601324-C",	"601258",	"601323",	"601325",	"601165",	"601204",	"601166",	"601167",	"601178",	"601137",	"601256 SO-C",	"601323-C",	"601275",	"601275-C",	"601171",	"601177",	"601177-C",	"601231",	"601231-C",	"601234",	"601236",	"601256",	"601259",	"601264",	"601272",	"601281",	"601282",	"601283",	"601285",	"601286",	"601287",	"601288")
+
+sales_history <- tbl(con, "PWV_GPSalesHistory_PRMW")
+
+top_customers <- c(
+  "Walmart",
+  "Lowes Home Improvement",
+  "Walmart-Di",
+  "Sam's Club",
+  "Homedepot-Prod",
+  "Walmart-Di-Cad",
+  "Costco",
+  "Walmartc",
+  "Amazon_sf",
+  "Sams.com",
+  "Z-9001",
+  "Z-9000",
+  "Homedepot.com",
+  "Bed Bath & Beyond",
+  "Samdsv",
+  "Wayfair",
+  "Target",
+  "Do It Best",
+  "Bimartprod",
+  "Ace Hardware Stores"
+)
+
+
+data <- sales_history %>%
+  filter(ITEMNMBR %in% item_list & Year >= 2017 & SopType != "Return") %>%
+  collect() %>%
+  janitor::clean_names("upper_camel")
+
+data_cust <- data %>%
+  mutate(
+    across(where(is.character), stringr::str_squish),
+    Custname = str_to_title(ChainName),
+    Custname = if_else(Custname %in% top_customers, Custname, "All Other"))
+
+top_items <- data_cust %>% 
+  filter(lubridate::year(Glpostdt) == 2021) %>% 
+  group_by(Itemnmbr) %>% 
+  summarise(Quantity = sum(Quantity,na.rm = TRUE)) %>% 
+  arrange(desc(Quantity))
+
+top_10_items <- top_items %>% 
+  slice(1:10)
+
+#this works better
+top_items_cust <- data_cust %>% 
+  filter(lubridate::year(Glpostdt) == 2021) %>% 
+  group_by(Custname, Itemnmbr) %>% 
+  summarise(Quantity = sum(Quantity,na.rm = TRUE)) %>% 
+  arrange(desc(Quantity)) %>% 
+  slice_max(n=2, with_ties = F, order_by= Quantity) %>% 
+  mutate(ID = paste0(Custname,Itemnmbr))
+
+
+last_trans_date <- data_cust %>% 
+  group_by(Itemnmbr, Itemdesc, Custname) %>% 
+  summarise(Date = max(Glpostdt))
+
+last_trans_date_clean <- last_trans_date %>% 
+  filter(Date >= cutoff) %>% 
+  mutate(ID = paste0(Custname, Itemnmbr))
+
+data_month <- data_cust %>%
+  mutate(
+    Glpostdt = lubridate::floor_date(Glpostdt, "month")
+  )
+
+data_week <- data_cust %>%
+  mutate(
+    Glpostdt = lubridate::floor_date(Glpostdt, "week")
+  )
+
+
+data_month %>% 
+  ggplot(aes(Glpostdt, Quantity, color = Custname)) +
+  scale_y_continuous(labels = scales::comma) +
+  geom_line()
+
+data_week %>% 
+  group_by(Custname, Glpostdt, Itemnmbr) %>%
+  #filter(Itemnmbr %in% top_10_items$Itemnmbr) %>% 
+  summarise(Quantity = sum(Quantity, na.rm = TRUE)) %>% 
+  ggplot(aes(Glpostdt, Quantity, group = Itemnmbr)) +
+  scale_y_continuous(labels = scales::comma) +
+  geom_line() +
+  facet_wrap(~Custname,scales = 'free_y') +
+  labs(title = 'Top items by customer')
+
+plotly::ggplotly()
+
+data_month %>% 
+  mutate(ID = paste0(Custname,Itemnmbr)) %>% 
+  filter(ID %in% last_trans_date_clean$ID & Glpostdt < current_month) %>% 
+  group_by(Custname, Glpostdt, Itemnmbr) %>%
+  summarise(Quantity = sum(Quantity, na.rm = TRUE)) %>% 
+  ggplot(aes(Glpostdt, Quantity, group = Itemnmbr)) +
+  scale_y_continuous(labels = scales::comma) +
+  geom_line() +
+  facet_wrap(~Custname,scales = 'free_y') +
+  labs(title = 'Top items by customer')
+
+plotly::ggplotly()
