@@ -94,7 +94,7 @@ def df2gluonts(
 #%%
 freq, fcast_length = 'W', 12
 
-cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique())}
+cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique()), 'Label': encode_cat(processed_df_fill['Label'].unique())}
 
 
 
@@ -104,8 +104,8 @@ train_data= df2gluonts(processed_df_fill,
                        cat_inverted_idx,
                        fcast_len=fcast_length,
                        freq=freq,
-                       ts_id=['sku'],
-                       static_cat=['sku']
+                       ts_id=['sku', 'Label'],
+                       static_cat=['sku', 'Label']
 )
 
 # Test data include fcast_length which are ground truths.
@@ -113,8 +113,8 @@ test_data = df2gluonts(processed_df_fill,
                        cat_inverted_idx,
                        fcast_len=0,
                        freq=freq,
-                       ts_id=['sku'],
-                       static_cat=['sku']
+                       ts_id=['sku', 'Label'],
+                       static_cat=['sku', 'Label']
 )
 
 
