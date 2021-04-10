@@ -12,6 +12,7 @@ from gluonts.dataset.common import (
     TrainDatasets)
 
 from gluonts.dataset.field_names import FieldName
+from gluonts.dataset.util import to_pandas
 
 from gluonts.mx.trainer import Trainer
 from gluonts.evaluation.backtest import make_evaluation_predictions
@@ -20,6 +21,7 @@ from Processing import (
     processed_df,
     processed_df_fill)
 from typing import Any, Callable, Dict, Sequence
+
 
 
 #%%
@@ -94,7 +96,7 @@ def df2gluonts(
 #%%
 freq, fcast_length = 'W', 12
 
-cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique()), 'Label': encode_cat(processed_df_fill['Label'].unique())}
+cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique()), 'Label': encode_cat(processed_df_fill['Label'].unique()), 'Custname': encode_cat(processed_df_fill['Custname'].unique())}
 
 
 
@@ -104,8 +106,8 @@ train_data= df2gluonts(processed_df_fill,
                        cat_inverted_idx,
                        fcast_len=fcast_length,
                        freq=freq,
-                       ts_id=['sku', 'Label'],
-                       static_cat=['sku', 'Label']
+                       ts_id=['sku', 'Label', 'Custname'],
+                       static_cat=['sku', 'Label', 'Custname']
 )
 
 # Test data include fcast_length which are ground truths.
@@ -113,8 +115,8 @@ test_data = df2gluonts(processed_df_fill,
                        cat_inverted_idx,
                        fcast_len=0,
                        freq=freq,
-                       ts_id=['sku', 'Label'],
-                       static_cat=['sku', 'Label']
+                       ts_id=['sku', 'Label', 'Custname'],
+                       static_cat=['sku', 'Label', 'Custname']
 )
 
 
@@ -136,7 +138,6 @@ gluonts_datasets = TrainDatasets(
 
 #%%
 epochs = 10
-fcast_length = 12
 
 metric=[
     {"Name": "train:loss", "Regex": r"Epoch\[\d+\] Evaluation metric 'epoch_loss'=(\S+)"},
@@ -154,7 +155,7 @@ from gluonts.model import deepar
 estimator = deepar.DeepAREstimator(
     prediction_length=gluonts_datasets.metadata.prediction_length,
     freq= gluonts_datasets.metadata.freq,
-    cardinality= [gluonts_datasets.metadata.feat_static_cat[0].cardinality],
+    cardinality= [gluonts_datasets.metadata.feat_static_cat[0].cardinality, gluonts_datasets.metadata.feat_static_cat[1].cardinality, gluonts_datasets.metadata.feat_static_cat[2].cardinality],
     use_feat_static_cat=True,
     #use_feat_dynamic_real=True,
     #use_feat_dynamic_cat = True,
@@ -176,6 +177,7 @@ forecast_it, ts_it = make_evaluation_predictions(
     num_samples=500,  # number of sample paths we want for evaluation
 )
 
+#forecast length must be less than the smallest group
 forecasts = list(forecast_it)
 tss = list(ts_it)
 
@@ -231,8 +233,19 @@ for i in range(0,len(forecasts)):
     '''
     plot forecasts
     '''
-    if 'Walmart' in forecasts[i].item_id:
+    if '900179' in forecasts[i].item_id:
         plot_prob_forecasts(tss[i],forecasts[i])
     else:
         pass
-# %%
+
+#%%
+items = []
+mean_samples = []
+for i in range(len(forecasts)):
+    items.append(forecasts[i].item_id)
+    mean_samples.append(forecasts[i].mean_ts)
+
+items = np.array(items)
+#items = {'items':items}
+mean_samples = pd.DataFrame(mean_samples)
+df = mean_samples.assign(items = items).melt(id_vars = 'items', var_name = 'Date', value_name = 'Quantity')
