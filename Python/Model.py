@@ -249,3 +249,23 @@ items = np.array(items)
 #items = {'items':items}
 mean_samples = pd.DataFrame(mean_samples)
 df = mean_samples.assign(items = items).melt(id_vars = 'items', var_name = 'Date', value_name = 'Quantity')
+# %%
+split_names = df['items'].str.split('|', n = 2, expand = True)
+# %%
+df['items'] = split_names[0]
+df['Channel'] = split_names[1]
+df['Customer'] = split_names[2]
+
+df
+# %%
+#need to add history to df
+history = processed_df_fill.rename({'x': 'Date', 'y': 'Quantity', 'Custname':'Customer', 'Label':'Channel', 'sku':'items'}, axis = 1)
+
+# %%
+history['Label'] = 'Actuals'
+df['Label'] = 'Forecast'
+
+out = history.append(df)
+# %%
+out.to_csv('../Modeling/DispensersModelGluon.csv')
+# %%
