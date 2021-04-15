@@ -11,7 +11,7 @@ raw_data = pd.read_csv("../Data/DispenserWeek.csv")
 #%%
 #parameters
 start_date = pd.to_datetime('2017-01-01')
-end_date = pd.to_datetime('2021-03-01')
+end_date = pd.to_datetime('2021-03-29')
 
 #%%
 #clean and format
@@ -51,3 +51,4 @@ processed_df = processed_df[index1.isin(index2)]
 freq = 'W'
 
 processed_df_fill = fill_dt_all(processed_df, ts_id=['sku', 'Label', 'Custname'], dates = ('min', end_date, 'D'), freq = freq)
+#processed_df_fill['y'] = np.log1p(processed_df_fill['y'])
