@@ -36,6 +36,25 @@ else:
     prediction_length = single_prediction_length
 
 #%%
+
+cal_features = calendar.drop(
+    ['date', 'wm_yr_wk', 'weekday', 'wday', 'month', 'year', 'event_name_1', 'event_name_2', 'd'], 
+    axis=1
+)
+cal_features['event_type_1'] = cal_features['event_type_1'].apply(lambda x: 0 if str(x)=="nan" else 1)
+cal_features['event_type_2'] = cal_features['event_type_2'].apply(lambda x: 0 if str(x)=="nan" else 1)
+
+test_cal_features = cal_features.values.T
+if submission:
+    train_cal_features = test_cal_features[:,:-submission_prediction_length]
+else:
+    train_cal_features = test_cal_features[:,:-submission_prediction_length-single_prediction_length]
+    test_cal_features = test_cal_features[:,:-submission_prediction_length]
+
+test_cal_features_list = [test_cal_features] * len(sales_train_validation)
+train_cal_features_list = [train_cal_features] * len(sales_train_validation)
+
+#%%
 item_ids = processed_df_fill["sku"].astype('category').cat.codes.values
 item_ids_un , item_ids_counts = np.unique(item_ids, return_counts=True)
 
@@ -117,7 +136,7 @@ estimator = DeepAREstimator(
     cardinality=stat_cat_cardinalities,
     trainer=Trainer(
         learning_rate=1e-3,
-        epochs=10,
+        epochs=3,
         num_batches_per_epoch=50,
         batch_size=32
     )
@@ -135,61 +154,28 @@ forecast_it, ts_it = make_evaluation_predictions(
 )
 
 print("Obtaining time series conditioning values ...")
-tss = list(tqdm(ts_it, total=len(test_ds)))
+#tss = list(tqdm(ts_it, total=len(test_ds)))
 print("Obtaining time series predictions ...")
-forecasts = list(tqdm(forecast_it, total=len(test_ds)))
-# %%
-if submission == True:
-    forecasts_acc = np.zeros((len(forecasts), prediction_length))
-    for i in range(len(forecasts)):
-        forecasts_acc[i] = np.mean(forecasts[i].samples, axis=0)
-# %%
-if submission == True:
-    forecasts_acc_sub = np.zeros((len(forecasts)*2, single_prediction_length))
-    forecasts_acc_sub[:len(forecasts)] = forecasts_acc[:,:single_prediction_length]
-    forecasts_acc_sub[len(forecasts):] = forecasts_acc[:,single_prediction_length:]
+#forecasts = list(tqdm(forecast_it, total=len(test_ds)))
+#%%
+test_entry = next(iter(forecast_it))
+
+def sample_df(forecast):
+    samples = forecast.samples
+    ns, w = samples.shape
+    dates = pd.date_range(forecast.start_date, freq=forecast.freq, periods=w)
+    return pd.DataFrame(samples.T, index=dates)
 
 #%%
-if submission == True:
-    np.all(np.equal(forecasts_acc[0], np.append(forecasts_acc_sub[0], forecasts_acc_sub[161])))
+#https://stackoverflow.com/questions/61416951/export-multiple-gluonts-forecasts-to-pandas-dataframe
+parts = [sample_df(entry).assign(entry=i)
+         for i, entry in enumerate(forecast_it)]
 
-#%%
+long_form = pd.concat(parts).reset_index().melt(['index', 'entry'])
+long_form.rename(columns={
+    'index': 'ts',
+    'variable': 'sample',
+    'value': 'forecast',
+})
 
-if submission == True:
-    import time
-
-    #sample_submission = pd.read_csv('sample_submission.csv')
-    #sample_submission.iloc[:,1:] = forecasts_acc_sub
-    sample_submission = forecasts_acc_sub
-    submission_id = 'submission_{}.csv'.format(int(time.time()))
-
-    sample_submission.to_csv(submission_id, index=False)
-# %%
-plot_log_path = "./plots/"
-directory = os.path.dirname(plot_log_path)
-if not os.path.exists(directory):
-    os.makedirs(directory)
-    
-def plot_prob_forecasts(ts_entry, forecast_entry, path, sample_id, inline=True):
-    plot_length = 150
-    prediction_intervals = (50, 67, 95, 99)
-    legend = ["observations", "median prediction"] + [f"{k}% prediction interval" for k in prediction_intervals][::-1]
-
-    _, ax = plt.subplots(1, 1, figsize=(10, 7))
-    ts_entry[-plot_length:].plot(ax=ax)
-    forecast_entry.plot(prediction_intervals=prediction_intervals, color='g')
-    ax.axvline(ts_entry.index[-prediction_length], color='r')
-    plt.legend(legend, loc="upper left")
-    if inline:
-        plt.show()
-        plt.clf()
-    else:
-        plt.savefig('{}forecast_{}.pdf'.format(path, sample_id))
-        plt.close()
-
-print("Plotting time series predictions ...")
-for i in tqdm(range(5)):
-    ts_entry = tss[i]
-    forecast_entry = forecasts[i]
-    plot_prob_forecasts(ts_entry, forecast_entry, plot_log_path, i)
-# %%
+long_form = long_form.groupby(['index', 'entry']).mean().reset_index().sort_values(['entry','index'])
