@@ -1,11 +1,16 @@
-#%%
+# %%
+import json
+from gluonts.evaluation import Evaluator
+from gluonts.model import deep_factor
+from gluonts.model import deepstate
+from gluonts.model import deepar
 import matplotlib as mlp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from gluonts.dataset.common import (
-    BasicFeatureInfo, 
+    BasicFeatureInfo,
     CategoricalFeatureInfo,
     ListDataset,
     MetaData,
@@ -23,8 +28,7 @@ from Processing import (
 from typing import Any, Callable, Dict, Sequence
 
 
-
-#%%
+# %%
 def encode_cat(cats):
     return {c: i for i, c in enumerate(cats)}
 
@@ -84,7 +88,8 @@ def df2gluonts(
             item_id = item_id_fn(*item_id)
 
         data_iter.append(
-            {"start": dfg.iloc[0]["x"], "target": target, "feat_static_cat": feat_static_cat, "item_id": item_id}
+            {"start": dfg.iloc[0]["x"], "target": target,
+                "feat_static_cat": feat_static_cat, "item_id": item_id}
         )
 
     # Finally we call gluonts API to convert data_iter with frequency of
@@ -93,22 +98,21 @@ def df2gluonts(
     return data
 
 
-#%%
+# %%
 freq, fcast_length = 'W', 12
 
-cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique()), 'Label': encode_cat(processed_df_fill['Label'].unique()), 'Custname': encode_cat(processed_df_fill['Custname'].unique())}
-
-
+cat_inverted_idx = {'sku': encode_cat(processed_df_fill['sku'].unique()), 'Label': encode_cat(
+    processed_df_fill['Label'].unique()), 'Custname': encode_cat(processed_df_fill['Custname'].unique())}
 
 
 # Drop the final fcast_length from train data.
-train_data= df2gluonts(processed_df_fill,
-                       cat_inverted_idx,
-                       fcast_len=fcast_length,
-                       freq=freq,
-                       ts_id=['sku', 'Label', 'Custname'],
-                       static_cat=['sku', 'Label', 'Custname']
-)
+train_data = df2gluonts(processed_df_fill,
+                        cat_inverted_idx,
+                        fcast_len=fcast_length,
+                        freq=freq,
+                        ts_id=['sku', 'Label', 'Custname'],
+                        static_cat=['sku', 'Label', 'Custname']
+                        )
 
 # Test data include fcast_length which are ground truths.
 test_data = df2gluonts(processed_df_fill,
@@ -117,31 +121,32 @@ test_data = df2gluonts(processed_df_fill,
                        freq=freq,
                        ts_id=['sku', 'Label', 'Custname'],
                        static_cat=['sku', 'Label', 'Custname']
-)
-
-
+                       )
 
 
 gluonts_datasets = TrainDatasets(
     metadata=MetaData(
-                freq=freq,
-                target={'name': 'quantity'},
-                feat_static_cat=[
-                    CategoricalFeatureInfo(name=k, cardinality=len(v)+1)   # Add 'unknown'.
-                    for k,v in cat_inverted_idx.items()
-                ],
-                prediction_length = fcast_length
+        freq=freq,
+        target={'name': 'quantity'},
+        feat_static_cat=[
+            # Add 'unknown'.
+            CategoricalFeatureInfo(name=k, cardinality=len(v)+1)
+            for k, v in cat_inverted_idx.items()
+        ],
+        prediction_length=fcast_length
     ),
     train=train_data,
     test=test_data
-)   
+)
 
-#%%
-epochs = 10
+# %%
+epochs = 20
 
-metric=[
-    {"Name": "train:loss", "Regex": r"Epoch\[\d+\] Evaluation metric 'epoch_loss'=(\S+)"},
-    {"Name": "train:learning_rate", "Regex": r"Epoch\[\d+\] Learning rate is (\S+)"},
+metric = [
+    {"Name": "train:loss",
+        "Regex": r"Epoch\[\d+\] Evaluation metric 'epoch_loss'=(\S+)"},
+    {"Name": "train:learning_rate",
+        "Regex": r"Epoch\[\d+\] Learning rate is (\S+)"},
     {"Name": "test:abs_error", "Regex": r"gluonts\[metric-abs_error\]: (\S+)"},
     {"Name": "test:rmse", "Regex": r"gluonts\[metric-RMSE\]: (\S+)"},
     {"Name": "test:mape", "Regex": r"gluonts\[metric-MAPE\]: (\S+)"},
@@ -150,26 +155,46 @@ metric=[
 ]
 
 
-from gluonts.model import deepar
-
 estimator = deepar.DeepAREstimator(
     prediction_length=gluonts_datasets.metadata.prediction_length,
-    freq= gluonts_datasets.metadata.freq,
-    cardinality= [gluonts_datasets.metadata.feat_static_cat[0].cardinality, gluonts_datasets.metadata.feat_static_cat[1].cardinality, gluonts_datasets.metadata.feat_static_cat[2].cardinality],
+    freq=gluonts_datasets.metadata.freq,
+    cardinality=[gluonts_datasets.metadata.feat_static_cat[0].cardinality,
+                 gluonts_datasets.metadata.feat_static_cat[1].cardinality, gluonts_datasets.metadata.feat_static_cat[2].cardinality],
     use_feat_static_cat=True,
-    #use_feat_dynamic_real=True,
+    # use_feat_dynamic_real=True,
     #use_feat_dynamic_cat = True,
-    #use_feat_static_real=True,
+    # use_feat_static_real=True,
     #time_features= time_features,
-    trainer= Trainer(epochs = epochs)
+    trainer=Trainer(epochs=epochs)
+)
+
+estimator = deepstate.DeepStateEstimator(
+    prediction_length=gluonts_datasets.metadata.prediction_length,
+    freq=gluonts_datasets.metadata.freq,
+    cardinality=[gluonts_datasets.metadata.feat_static_cat[0].cardinality,
+                 gluonts_datasets.metadata.feat_static_cat[1].cardinality, gluonts_datasets.metadata.feat_static_cat[2].cardinality],
+    use_feat_static_cat=True,
+    # use_feat_dynamic_real=True,
+    #use_feat_dynamic_cat = True,
+    # use_feat_static_real=True,
+    #time_features= time_features,
+    trainer=Trainer(epochs=5)
 )
 
 
+estimator = deep_factor.DeepFactorEstimator(
+    prediction_length=gluonts_datasets.metadata.prediction_length,
+    freq=gluonts_datasets.metadata.freq,
+    cardinality=[gluonts_datasets.metadata.feat_static_cat[0].cardinality,
+                 gluonts_datasets.metadata.feat_static_cat[1].cardinality, gluonts_datasets.metadata.feat_static_cat[2].cardinality],
+    trainer=Trainer(epochs=5)
+)
 
-predictor = estimator.train(training_data=gluonts_datasets.train, validation_data=gluonts_datasets.test)
+predictor = estimator.train(
+    training_data=gluonts_datasets.train, validation_data=gluonts_datasets.test)
 
 
-#%%
+# %%
 
 forecast_it, ts_it = make_evaluation_predictions(
     dataset=gluonts_datasets.test,  # test dataset
@@ -177,22 +202,21 @@ forecast_it, ts_it = make_evaluation_predictions(
     num_samples=500,  # number of sample paths we want for evaluation
 )
 
-#forecast length must be less than the smallest group
+# forecast length must be less than the smallest group
 forecasts = list(forecast_it)
 tss = list(ts_it)
 
 
-#evaluations 
-#%%
-from gluonts.evaluation import Evaluator
-import json
+# evaluations
+# %%
 
 evaluator = Evaluator(quantiles=[0.1, 0.5, 0.9])
-agg_metrics, item_metrics = evaluator(iter(tss), iter(forecasts), num_series=len(gluonts_datasets.test))
+agg_metrics, item_metrics = evaluator(iter(tss), iter(
+    forecasts), num_series=len(gluonts_datasets.test))
 
 print(json.dumps(agg_metrics, indent=4))
 
-#%%
+# %%
 
 item_metrics.plot(x='MSIS', y='MASE', kind='scatter')
 plt.grid(which="both")
@@ -203,7 +227,8 @@ plt.show()
 def plot_prob_forecasts(ts_entry, forecast_entry):
     plot_length = 150
     prediction_intervals = (50.0, 90.0)
-    legend = ["observations", "median prediction"] + [f"{k}% prediction interval" for k in prediction_intervals][::-1]
+    legend = ["observations", "median prediction"] + \
+        [f"{k}% prediction interval" for k in prediction_intervals][::-1]
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 7))
     ax.yaxis.set_major_formatter(mlp.ticker.StrMethodFormatter('{x:,.0f}'))
@@ -213,32 +238,34 @@ def plot_prob_forecasts(ts_entry, forecast_entry):
     plt.title(forecast_entry.item_id)
     plt.legend(legend, loc="upper left")
     plt.show()
+
+
 # %%
 ts_entry = next(iter(tss))
 forecast_entry = next(iter(forecasts))
 # %%
-plot_prob_forecasts(ts_entry,forecast_entry)
+plot_prob_forecasts(ts_entry, forecast_entry)
 # %%
-for i in range(0,len(forecasts), 5):
+for i in range(0, len(forecasts), 5):
     '''
     plot forecasts
     '''
-    plot_prob_forecasts(tss[i],forecasts[i])
+    plot_prob_forecasts(tss[i], forecasts[i])
 # %%
 
 forecasts = list(predictor.predict(dataset=gluonts_datasets.test))
 
 # %%
-for i in range(0,len(forecasts)):
+for i in range(0, len(forecasts)):
     '''
     plot forecasts
     '''
     if '900179' in forecasts[i].item_id:
-        plot_prob_forecasts(tss[i],forecasts[i])
+        plot_prob_forecasts(tss[i], forecasts[i])
     else:
         pass
 
-#%%
+# %%
 items = []
 mean_samples = []
 for i in range(len(forecasts)):
@@ -248,9 +275,10 @@ for i in range(len(forecasts)):
 items = np.array(items)
 #items = {'items':items}
 mean_samples = pd.DataFrame(mean_samples)
-df = mean_samples.assign(items = items).melt(id_vars = 'items', var_name = 'Date', value_name = 'Quantity')
+df = mean_samples.assign(items=items).melt(
+    id_vars='items', var_name='Date', value_name='Quantity')
 # %%
-split_names = df['items'].str.split('|', n = 2, expand = True)
+split_names = df['items'].str.split('|', n=2, expand=True)
 # %%
 df['items'] = split_names[0]
 df['Channel'] = split_names[1]
@@ -258,14 +286,16 @@ df['Customer'] = split_names[2]
 
 df
 # %%
-#need to add history to df
-history = processed_df_fill.rename({'x': 'Date', 'y': 'Quantity', 'Custname':'Customer', 'Label':'Channel', 'sku':'items'}, axis = 1)
+# need to add history to df
+history = processed_df_fill.rename(
+    {'x': 'Date', 'y': 'Quantity', 'Custname': 'Customer', 'Label': 'Channel', 'sku': 'items'}, axis=1)
 
 # %%
 history['Label'] = 'Actuals'
 df['Label'] = 'Forecast'
 
 out = history.append(df)
+# out['Quantity']=np.expm1(out['Quantity'])
 # %%
 out.to_csv('../Modeling/DispensersModelGluon.csv')
 # %%
