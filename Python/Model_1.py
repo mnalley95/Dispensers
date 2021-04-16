@@ -38,7 +38,7 @@ else:
     prediction_length = single_prediction_length
 
 # %%
-
+'''
 cal_features = calendar.drop(
     ['date', 'wm_yr_wk', 'weekday', 'wday', 'month',
         'year', 'event_name_1', 'event_name_2', 'd'],
@@ -59,15 +59,18 @@ else:
 
 test_cal_features_list = [test_cal_features] * len(sales_train_validation)
 train_cal_features_list = [train_cal_features] * len(sales_train_validation)
-
+'''
 # %%
-item_ids = processed_df_fill["sku"].astype('category').cat.codes.values
+items = processed_df_fill["sku"].astype('category')
+item_ids = items.cat.codes.values
 item_ids_un, item_ids_counts = np.unique(item_ids, return_counts=True)
 
-cust_ids = processed_df_fill["Custname"].astype('category').cat.codes.values
+custs = processed_df_fill["Custname"].astype('category')
+cust_ids = custs.cat.codes.values
 cust_ids_un, cust_ids_counts = np.unique(cust_ids, return_counts=True)
 
-cat_ids = processed_df_fill["Label"].astype('category').cat.codes.values
+cats = processed_df_fill["Label"].astype('category')
+cat_ids = cats.cat.codes.values
 cat_ids_un, cat_ids_counts = np.unique(cat_ids, return_counts=True)
 
 stat_cat_list = [item_ids, cust_ids, cat_ids]
@@ -110,6 +113,7 @@ train_ds = ListDataset([
         FieldName.START: start,
         # FieldName.FEAT_DYNAMIC_REAL: fdr,
         FieldName.FEAT_STATIC_CAT: fsc
+        #FieldName.ITEM_ID: item_ids
     }
     for (target, start, fsc) in zip(train_target_values,
                                     m5_dates,
@@ -186,3 +190,39 @@ long_form.rename(columns={
 
 long_form = long_form.groupby(['index', 'entry']).mean(
 ).reset_index().sort_values(['entry', 'index'])
+
+#%%
+items, custs, cats
+# %%
+def convert(code):
+    code_un = code.cat.codes
+    cat_codes = [code.cat.categories.values, code_un]
+    print(cat_codes)
+    return cat_codes
+
+item_cat_codes = convert(items)
+cust_cat_codes = convert(custs)
+cats_cat_codes = convert(cats)
+# %%
+#x = np.array(item_cat_codes, dtype = 'str')
+#y = np.array(cust_cat_codes,  dtype = 'str')
+#z = np.array(cats_cat_codes,  dtype = 'str')
+
+x = items.to_numpy()
+y = custs.to_numpy()
+z = cats.to_numpy()
+
+#%%
+named_list = [x,y,z]
+named = np.concatenate(named_list).reshape(len(named_list), len(x)).T
+
+#grab unique combinations to regnerate entry values
+entry_df = pd.DataFrame(named).drop_duplicates().reset_index(drop = True).rename({0: 'item', 1: 'loc', 2:'channel'}, axis = 1)
+
+# %%
+#format to generate history
+fc_full = long_form.set_index('entry').join(entry_df).rename({'index':'Date'}, axis = 1)
+history = processed_df_fill.rename({'x': 'Date', 'y':'value', 'Custname':'loc', 'Label':'channel', 'sku':'item'}, axis = 1)
+out = pd.concat([history,fc_full])
+
+# %%
